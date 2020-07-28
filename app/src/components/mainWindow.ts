@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import got from 'got';
 
 import { BrowserWindow, shell, ipcMain, dialog, Event } from 'electron';
 import windowStateKeeper from 'electron-window-state';
@@ -219,6 +220,7 @@ export function createMainWindow(
 
   const createNewWindow: (url: string) => BrowserWindow = (url: string) => {
     const window = new BrowserWindow(DEFAULT_WINDOW_OPTIONS);
+
     if (options.userAgent) {
       window.webContents.userAgent = options.userAgent;
     }
@@ -319,7 +321,28 @@ export function createMainWindow(
     );
   }
 
-  if (options.userAgent) {
+  let initialLoad = false;
+  // this will set the user agent to the latest version of Chrome, which resolves some issues with websites
+  // that are paranoid about having to use the latest Chrome version (i.e. all Google apps)
+  if (options.userAgent?.toLowerCase() === 'auto') {
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    got(
+      'https://www.whatismybrowser.com/guides/the-latest-version/chrome',
+    ).then((response) => {
+      const html = response.body;
+      const chromeVersion = /Chrome.*?\n?.*?(\d+\.\d+\.\d+\.\d+)/im.exec(
+        html,
+      )[1];
+      const userAgent = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36 Edg/84.0.522.40`;
+      mainWindow.webContents.userAgent = userAgent;
+      options.userAgent = userAgent;
+      // we may need to reload the URL if it has already loaded by this point
+      if (initialLoad) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        mainWindow.loadURL(options.targetUrl);
+      }
+    });
+  } else if (options.userAgent) {
     mainWindow.webContents.userAgent = options.userAgent;
   }
 
@@ -375,6 +398,7 @@ export function createMainWindow(
 
   // eslint-disable-next-line @typescript-eslint/no-floating-promises
   mainWindow.loadURL(options.targetUrl);
+  initialLoad = true;
 
   // @ts-ignore
   mainWindow.on('new-tab', () => createNewTab(options.targetUrl, true));
